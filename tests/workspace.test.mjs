@@ -19,5 +19,5 @@ test('HTML content is escaped and cannot install scripts or links', () => {
   assert.ok(!html.includes('<img src=x')); assert.ok(html.includes('&quot; onload=&quot;run()'));
 });
 test('unsupported contracts, arbitrary URLs, commands, private fields, and oversized content fail', () => {
-  for (const value of [null, [], {...workspace, schema_version: 'v2'}, {...workspace, token: 'not-a-secret'}, {...workspace, guild_key: '../outside'}, {...workspace, repository: 'attacker/guild-x'}, {...workspace, purpose: 'a'.repeat(1201)}, {...workspace, steps: [{title: 'test', detail: 'test', action: 'https://example.com'}]}, {...workspace, steps: workspace.steps.map(step => ({...step, action: 'join'}))}]) assert.throws(() => validateWorkspace(value));
+  for (const value of [null, [], {...workspace, schema_version: 'v2'}, {...workspace, token: 'not-a-secret'}, JSON.parse('{"__proto__": {"polluted": true}}', (key, value) => { Object.assign(workspace, {[key]: value}); return workspace; }), {...workspace, guild_key: '../outside'}, {...workspace, repository: 'attacker/guild-x'}, {...workspace, purpose: 'a'.repeat(1201)}, {...workspace, steps: [{title: 'test', detail: 'test', action: 'https://example.com'}]}, {...workspace, steps: workspace.steps.map(step => ({...step, action: 'join'}))}]) assert.throws(() => validateWorkspace(value));
 });
