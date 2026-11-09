@@ -16,6 +16,8 @@
 
 需要 Node 24。執行 npm ci、npm test、npm run build、npm run preview；開啟 http://127.0.0.1:4417。瀏覽器驗證：npx playwright install chromium，再執行 npm run test:browser。
 
+本機預覽的 iframe 來源限同源、自由工坊正式／測試站，以及橋接既有允許的 HTTP localhost／127.0.0.1（含不同連接埠）；仍使用原 sandbox 與導覽協定。這些 HTTP 安全標頭只由本機預覽伺服器送出，不會修改 GitHub Pages 的回應標頭。
+
 文字與流程在 workspace.json，畫面在 src/。本 Repo 的 PR 由非作者維護者審查；verify 通過並合併 main 後，由 GitHub Actions 自動發布本公會的 GitHub Pages，毋須重建主站或其他公會。release.json 記錄實際發布的 source SHA。
 
 需回復時，在 Verify and publish workspace 的 Run workflow 選 main，填入曾合併到 main 的完整 source_sha。它會重新驗證並發布該版本；一般發布留空。main 分支與 github-pages 環境的保護不能關閉。發布失敗保留原站點；以 Actions 與公開 release.json 核對實際結果。
