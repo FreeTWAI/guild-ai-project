@@ -1,5 +1,6 @@
 import {test, expect} from '@playwright/test';
-import {readFile} from 'node:fs/promises';
+import {readFile, rename} from 'node:fs/promises';
+import {createServer} from 'node:http';
 const workspace = JSON.parse(await readFile(new URL('../../workspace.json', import.meta.url), 'utf8'));
 for (const theme of ['light', 'night', 'versefolk']) for (const width of [390, 1440]) {
   test(`${theme} ${width}: readable workflow and working destinations`, async ({page}) => {
@@ -39,4 +40,61 @@ test('sandbox bridge uses the pinned protocol and sends navigation without priva
   await page.frameLocator('iframe').getByRole('link', {name: '進入工作區'}).click();
   await expect.poll(() => page.evaluate(() => window.messages.filter(message => message.type === 'navigate'))).toEqual([{protocol: 'freedom.guild-launchpad/v1', type: 'navigate', channel: 'b5be8af2-2e86-4208-b488-c7c9f1b84512', guildKey: workspace.guild_key, action: 'work'}]);
   expect(new URL(page.url()).pathname).toBe('/__guild-fixture');
+});
+
+async function previewParent(page, hostname, run) {
+  const server = createServer((_request, response) => response.writeHead(200, {'Content-Type': 'text/html'}).end('<!doctype html><html><body><main></main></body></html>'));
+  await new Promise((resolve, reject) => {server.once('error', reject); server.listen(0, hostname === 'localhost' ? '127.0.0.1' : hostname, resolve);});
+  try {
+    const origin = `http://${hostname}:${server.address().port}`;
+    await page.goto(origin);
+    await page.evaluate(guildKey => {
+      window.messages = [];
+      const frame = document.createElement('iframe');
+      frame.title = 'local preview'; frame.setAttribute('sandbox', 'allow-scripts');
+      window.addEventListener('message', event => {if (event.source === frame.contentWindow && event.origin === 'null') window.messages.push(event.data);});
+      frame.onload = () => frame.contentWindow.postMessage({protocol: 'freedom.guild-launchpad/v1', type: 'init', channel: 'b5be8af2-2e86-4208-b488-c7c9f1b84512', guildKey, theme: 'light', actions: ['work', 'skills', 'tools', 'information']}, '*');
+      frame.src = 'http://127.0.0.1:4417/'; document.querySelector('main').append(frame);
+    }, workspace.guild_key);
+    await run(origin);
+  } finally {
+    server.closeAllConnections();
+    await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+  }
+}
+
+for (const hostname of ['127.0.0.1', 'localhost']) {
+  test(`preview permits the existing ${hostname} bridge from a different port`, async ({page}) => {
+    await previewParent(page, hostname, async origin => {
+      await expect.poll(() => page.evaluate(() => window.messages.some(message => message.type === 'ready'))).toBe(true);
+      await page.frameLocator('iframe').getByRole('link', {name: '進入工作區'}).click();
+      await expect.poll(() => page.evaluate(() => window.messages.filter(message => message.type === 'navigate'))).toEqual([{protocol: 'freedom.guild-launchpad/v1', type: 'navigate', channel: 'b5be8af2-2e86-4208-b488-c7c9f1b84512', guildKey: workspace.guild_key, action: 'work'}]);
+      expect(new URL(page.url()).origin).toBe(origin);
+    });
+  });
+}
+
+test('preview CSP blocks a parent outside the bridge origin allowlist', async ({page}) => {
+  const violations = [];
+  page.on('console', message => {if (message.type() === 'error' && message.text().includes('frame-ancestors')) violations.push(message.text());});
+  await previewParent(page, '127.0.0.2', async () => {
+    await expect.poll(() => violations.length).toBeGreaterThan(0);
+    expect(await page.evaluate(() => window.messages)).toEqual([]);
+    await expect(page.frameLocator('iframe').getByRole('link', {name: '進入工作區'})).toHaveCount(0);
+  });
+});
+
+test('preview returns 404 for a missing allowed file and keeps serving', async ({request}) => {
+  const file = new URL('../../dist/release.json', import.meta.url);
+  const held = new URL('../../dist/release.json.test-held', import.meta.url);
+  await rename(file, held);
+  try {
+    const missing = await request.get('/release.json');
+    expect(missing.status()).toBe(404);
+    const index = await request.get('/');
+    expect(index.status()).toBe(200);
+    expect(await index.text()).toContain(workspace.headline);
+  } finally {
+    await rename(held, file);
+  }
 });
